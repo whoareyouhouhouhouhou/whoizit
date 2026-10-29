@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Who's That? – Custom Guess Who</title>
+<style>
+  :root {
+    --bg: #14161f; --panel: #1e2130; --panel2: #272b3f; --text: #eef0f8; --muted: #9aa0bd;
+    --accent: #ffb454; --good: #5fd38d; --bad: #ff6b6b; --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  main { max-width: 980px; margin: 0 auto; padding: 20px 16px 60px; }
+  h1 { margin: 8px 0 4px; font-size: 1.8rem; }
+  h2 { margin: 0 0 10px; font-size: 1.2rem; }
+  p.sub { color: var(--muted); margin: 0 0 20px; }
+  .panel { background: var(--panel); border-radius: var(--radius); padding: 18px; margin-bottom: 16px; }
+  button { font: inherit; cursor: pointer; border: 0; border-radius: 10px; padding: 10px 16px; background: var(--panel2); color: var(--text); }
+  button:hover { filter: brightness(1.2); }
+  button.primary { background: var(--accent); color: #231a05; font-weight: 600; }
+  button.good { background: var(--good); color: #05220f; font-weight: 600; }
+  button.bad { background: var(--bad); color: #2a0707; font-weight: 600; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  select { font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid #3a3f5c; background: var(--bg); color: var(--text); max-width: 100%; }
+  input[type=text] { font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid #3a3f5c; background: var(--bg); color: var(--text); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .hidden { display: none !important; }
+  .code { font-size: 2rem; letter-spacing: .25em; font-weight: 700; color: var(--accent); user-select: all; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(116px, 1fr)); gap: 10px; }
+  .card { position: relative; background: var(--panel2); border-radius: 12px; padding: 8px; text-align: center; cursor: pointer; transition: transform .15s, opacity .2s; border: 2px solid transparent; }
+  .card:hover { transform: translateY(-2px); }
+  .card .av { width: 100%; aspect-ratio: 1; border-radius: 8px; object-fit: cover; display: flex; align-items: center; justify-content: center; font-size: 2.4rem; font-weight: 700; color: #fff; }
+  .card .nm { margin-top: 6px; font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card.down { opacity: .28; filter: grayscale(1); }
+  .card.down::after { content: "✕"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 4rem; color: var(--bad); }
+  .card.mine { border-color: var(--accent); }
+  .card.sel { border-color: var(--good); }
+  .card .rm { position: absolute; top: 2px; right: 4px; background: rgba(0,0,0,.55); border-radius: 50%; width: 24px; height: 24px; padding: 0; line-height: 24px; font-size: .8rem; }
+  .game { display: grid; grid-template-columns: 1fr 300px; gap: 16px; }
+  @media (max-width: 760px) { .game { grid-template-columns: 1fr; } }
+  .chat { display: flex; flex-direction: column; height: 460px; }
+  .log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px; }
+  .msg { padding: 7px 10px; border-radius: 10px; max-width: 90%; background: var(--panel2); font-size: .92rem; word-wrap: break-word; }
+  .msg.me { align-self: flex-end; background: #3a3320; }
+  .msg.sys { align-self: center; color: var(--muted); background: none; font-size: .82rem; text-align: center; }
+  .secret { display: flex; align-items: center; gap: 10px; }
+  .secret .card { width: 70px; padding: 4px; cursor: default; } .secret .card .av { font-size: 1.4rem; } .secret .card .nm { display: none; }
+  .status { color: var(--muted); font-size: .9rem; }
+  .banner { text-align: center; padding: 22px; border-radius: var(--radius); font-size: 1.4rem; font-weight: 700; margin-bottom: 14px; }
+  .banner.win { background: #1c3a2a; color: var(--good); } .banner.lose { background: #3d1e22; color: var(--bad); }
+  .hint { color: var(--muted); font-size: .85rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🕵️ Who's That?</h1>
+  <p class="sub">Guess Who with people you both actually know. Build your own cast, share a room code, play from anywhere.</p>
+
+  <!-- HOME -->
+  <section id="home" class="panel">
+    <h2>Start</h2>
+    <div class="row" style="margin-bottom:14px">
+      <button class="primary" id="btnCreate">Create a game</button>
+    </div>
+    <div class="row">
+      <input type="text" id="joinCode" placeholder="Room code" maxlength="5" style="text-transform:uppercase;width:150px">
+      <button id="btnJoin">Join a game</button>
+    </div>
+    <p class="hint" id="homeMsg"></p>
+  </section>
+
+  <!-- ROSTER BUILDER (host) -->
+  <section id="builder" class="hidden">
+    <div class="panel">
+      <h2>1. Build the cast</h2>
+      <p class="hint">Add the people you both know (at least 6, up to 30). Photos are optional – they're shrunk and sent straight to your opponent, never uploaded to a server. Everything is saved automatically in a small database in this browser, so next time you just pick a group and play.</p>
+      <div class="row" style="margin-bottom:12px">
+        <label for="groupSel" class="hint">Group:</label>
+        <select id="groupSel"></select>
+        <button id="btnNewGroup">+ New group</button>
+        <button id="btnDelGroup">Delete group</button>
+        <button id="btnExport">⬇ Export</button>
+        <button id="btnImport">⬆ Import</button>
+        <input type="file" id="importFile" accept="application/json,.json" class="hidden">
+      </div>
+      <p class="hint hidden" id="storeWarn" style="color:var(--bad)">⚠ This browser blocked local storage (private mode?), so your cast won't be remembered. Use Export to keep a backup.</p>
+      <div class="row">
+        <input type="text" id="newName" placeholder="Name (e.g. Aunt Carol)" maxlength="20">
+        <input type="file" id="newPhoto" accept="image/*">
+        <button class="primary" id="btnAdd">Add person</button>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="grid" id="rosterGrid"></div>
+      <div class="row" style="margin-top:14px">
+        <span class="status" id="rosterCount"></span>
+        <button class="good" id="btnOpen" disabled>Open the room →</button>
+        <button id="btnClear">Clear all</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- LOBBY -->
+  <section id="lobby" class="panel hidden">
+    <h2>Waiting for your opponent…</h2>
+    <p>Send them this code, then they click <b>Join a game</b>:</p>
+    <div class="code" id="roomCode">-----</div>
+    <p class="hint">Keep this tab open. Share via any messenger.</p>
+  </section>
+
+  <!-- PICK SECRET -->
+  <section id="pick" class="panel hidden">
+    <h2>Pick your secret person</h2>
+    <p class="hint">Your opponent will try to guess who you chose.</p>
+    <div class="grid" id="pickGrid"></div>
+    <p class="status" id="pickStatus"></p>
+    <button id="btnSaveCast" class="hidden">💾 Save this cast to my groups</button>
+  </section>
+
+  <!-- GAME -->
+  <section id="gameWrap" class="hidden">
+    <div id="banner" class="banner hidden"></div>
+    <div class="game">
+      <div class="panel">
+        <div class="row" style="justify-content:space-between;margin-bottom:10px">
+          <h2 style="margin:0">The board</h2>
+          <div class="secret"><span class="hint">Your secret:</span><div id="mySecret"></div></div>
+        </div>
+        <p class="hint">Click a person to cross them off. Use "Make a guess" when you're ready to name your opponent's person – a wrong guess loses!</p>
+        <div class="grid" id="board"></div>
+        <div class="row" style="margin-top:14px">
+          <button class="primary" id="btnGuessMode">🎯 Make a guess</button>
+          <button id="btnAgain" class="hidden">Play again</button>
+        </div>
+      </div>
+      <div class="panel chat">
+        <h2>Questions</h2>
+        <div class="log" id="log"></div>
+        <div class="row" style="margin:8px 0 4px">
+          <button class="good" id="btnYes">Yes</button>
+          <button class="bad" id="btnNo">No</button>
+        </div>
+        <div class="row">
+          <input type="text" id="chatInput" placeholder="Ask e.g. “Do they wear glasses?”" style="flex:1;min-width:0">
+          <button id="btnSend">Send</button>
+        </div>
+      </div>
+    </div>
+  </section>
+  <p class="hint" style="text-align:center" id="ver">build 5</p>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const MIN = 6, MAX = 30, STORE = 'whosthat.roster.v1', LAST = 'whosthat.lastGroup';
+  const sections = ['home', 'builder', 'lobby', 'pick', 'gameWrap'];
+  const show = id => sections.forEach(s => $(s).classList.toggle('hidden', s !== id));
+
+  // STUN finds your public address; TURN relays traffic when a direct connection is impossible
+  // (mobile data, strict routers). Metered.ca free-tier relay credentials.
+  const TURN = { username: 'b9b7f043b71227e44bd2043f', credential: 'rmD/UUMQGNzxzd7n' };
+  const PEER_OPTS = { config: { iceServers: [
+    { urls: ['stun:stun.relay.metered.ca:80', 'stun:stun.l.google.com:19302'] },
+    { urls: 'turn:global.relay.metered.ca:80', ...TURN },
+    { urls: 'turn:global.relay.metered.ca:80?transport=tcp', ...TURN },
+    { urls: 'turn:global.relay.metered.ca:443', ...TURN },
+    { urls: 'turns:global.relay.metered.ca:443?transport=tcp', ...TURN }
+  ] } };
+  let roster = [];
+  let groupName = null;
+  let peer = null, conn = null, isHost = false;
+  let mySecret = null, oppReady = false, iReady = false;
+  let down = new Set(), guessing = false, over = false;
+
+  // Small IndexedDB store: one record per named group of people (photos included).
+  const DB = (() => {
+    let dbp;
+    const open = () => dbp || (dbp = new Promise((res, rej) => {
+      const r = indexedDB.open('whosthat', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('groups', { keyPath: 'name' });
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    }));
+    const tx = async (mode, fn) => {
+      const d = await open();
+      return new Promise((res, rej) => {
+        const t = d.transaction('groups', mode), rq = fn(t.objectStore('groups'));
+        t.oncomplete = () => res(rq && rq.result); t.onerror = () => rej(t.error);
+      });
+    };
+    return { all: () => tx('readonly', s => s.getAll()), put: g => tx('readwrite', s => s.put(g)), del: n => tx('readwrite', s => s.delete(n)) };
+  })();
+  const warnStore = () => $('storeWarn').classList.remove('hidden');
+  const save = () => DB.put({ name: groupName, people: roster, updated: Date.now() }).catch(warnStore);
+  try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
+
+  async function refreshGroups(pick) {
+    let all = [];
+    try { all = await DB.all(); } catch (e) { warnStore(); }
+    if (!all.length) {
+      let old = []; try { old = JSON.parse(localStorage.getItem(STORE)) || []; } catch (e) {}
+      const g = { name: 'My group', people: old, updated: Date.now() };
+      all = [g]; DB.put(g).catch(warnStore);
+    }
+    let last = pick; if (!last) try { last = localStorage.getItem(LAST); } catch (e) {}
+    const cur = all.find(g => g.name === last) || all[0];
+    const sel = $('groupSel'); sel.innerHTML = '';
+    all.sort((a, b) => a.name.localeCompare(b.name)).forEach(g => sel.add(new Option(`${g.name} (${g.people.length})`, g.name)));
+    sel.value = cur.name; groupName = cur.name; roster = cur.people;
+    try { localStorage.setItem(LAST, groupName); } catch (e) {}
+    renderRoster();
+  }
+  const hue = s => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+
+  function cardEl(p, opts = {}) {
+    const d = document.createElement('div');
+    d.className = 'card';
+    let av;
+    if (p.img) { av = document.createElement('img'); av.src = p.img; av.className = 'av'; av.alt = ''; }
+    else { av = document.createElement('div'); av.className = 'av'; av.style.background = `hsl(${hue(p.name)} 55% 42%)`; av.textContent = p.name.trim().charAt(0).toUpperCase(); }
+    const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = p.name;
+    d.append(av, nm);
+    return d;
+  }
+
+  // ---------- roster builder ----------
+  function renderRoster() {
+    const g = $('rosterGrid'); g.innerHTML = '';
+    roster.forEach(p => {
+      const c = cardEl(p); c.style.cursor = 'default';
+      const rm = document.createElement('button'); rm.className = 'rm'; rm.textContent = '✕'; rm.title = 'Remove';
+      rm.onclick = () => { roster = roster.filter(x => x.id !== p.id); save(); renderRoster(); };
+      c.append(rm); g.append(c);
+    });
+    $('rosterCount').textContent = `${roster.length} / ${MAX} people` + (roster.length < MIN ? ` (need ${MIN - roster.length} more)` : '');
+    $('btnOpen').disabled = roster.length < MIN;
+    const o = $('groupSel').selectedOptions[0]; if (o) o.text = `${groupName} (${roster.length})`;
+  }
+
+  $('groupSel').onchange = () => refreshGroups($('groupSel').value);
+  $('btnNewGroup').onclick = async () => {
+    const name = (prompt('Name for the new group (e.g. Family, Work, Uni friends):') || '').trim().slice(0, 30);
+    if (!name) return;
+    if ([...$('groupSel').options].some(o => o.value === name)) return alert('A group with that name already exists.');
+    try { await DB.put({ name, people: [], updated: Date.now() }); } catch (e) { warnStore(); }
+    refreshGroups(name);
+  };
+  $('btnDelGroup').onclick = async () => {
+    if (!confirm(`Delete the group "${groupName}" and all its people?`)) return;
+    try { await DB.del(groupName); } catch (e) { warnStore(); }
+    refreshGroups('');
+  };
+  $('btnExport').onclick = () => {
+    const blob = new Blob([JSON.stringify({ name: groupName, people: roster })], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `whosthat-${groupName.replace(/[^\w-]+/g, '_')}.json`; a.click(); URL.revokeObjectURL(a.href);
+  };
+  $('btnImport').onclick = () => $('importFile').click();
+  $('importFile').onchange = async e => {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    try {
+      const d = JSON.parse(await f.text());
+      const people = (d.people || []).slice(0, MAX).map(p => ({
+        id: String(p.id || 'p' + Math.random().toString(36).slice(2, 9)),
+        name: String(p.name || '?').slice(0, 20),
+        img: typeof p.img === 'string' && p.img.startsWith('data:image/') ? p.img : null }));
+      if (!people.length) throw 0;
+      let name = String(d.name || 'Imported').slice(0, 30), n = 2; const base = name;
+      const names = [...$('groupSel').options].map(o => o.value);
+      while (names.includes(name)) name = `${base} (${n++})`;
+      await DB.put({ name, people, updated: Date.now() });
+      refreshGroups(name);
+    } catch (err) { alert("That file isn't a valid exported group."); }
+  };
+
+  function resizeImage(file) {
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(file), img = new Image();
+      img.onload = () => {
+        const S = 160, cv = document.createElement('canvas'); cv.width = cv.height = S;
+        const m = Math.min(img.width, img.height), sx = (img.width - m) / 2, sy = (img.height - m) / 2;
+        cv.getContext('2d').drawImage(img, sx, sy, m, m, 0, 0, S, S);
+        URL.revokeObjectURL(url); res(cv.toDataURL('image/jpeg', .72));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('bad image')); };
+      img.src = url;
+    });
+  }
+
+  $('btnAdd').onclick = async () => {
+    const name = $('newName').value.trim();
+    if (!name) return $('newName').focus();
+    if (roster.length >= MAX) return alert(`Max ${MAX} people.`);
+    if (roster.some(p => p.name.toLowerCase() === name.toLowerCase())) return alert('That name is already on the board.');
+    let img = null; const f = $('newPhoto').files[0];
+    if (f) { try { img = await resizeImage(f); } catch (e) { alert('Could not read that image.'); return; } }
+    roster.push({ id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name, img });
+    save(); $('newName').value = ''; $('newPhoto').value = ''; renderRoster(); $('newName').focus();
+  };
+  $('newName').addEventListener('keydown', e => { if (e.key === 'Enter') $('btnAdd').click(); });
+  $('btnClear').onclick = () => { if (confirm('Remove everyone from this group?')) { roster = []; save(); renderRoster(); } };
+
+  $('btnCreate').onclick = async () => { show('builder'); await refreshGroups(); };
+
+  // ---------- connection ----------
+  const ALPHA = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const mkCode = () => Array.from({ length: 5 }, () => ALPHA[Math.floor(Math.random() * ALPHA.length)]).join('');
+  const peerId = code => 'whosthat-' + code.toLowerCase();
+
+  function openRoom(tries = 0) {
+    isHost = true;
+    const code = mkCode();
+    peer = new Peer(peerId(code), PEER_OPTS);
+    peer.on('open', () => { $('roomCode').textContent = code; show('lobby'); });
+    peer.on('error', err => {
+      if (err.type === 'unavailable-id' && tries < 5) { peer.destroy(); openRoom(tries + 1); }
+      else alert('Connection problem: ' + err.type);
+    });
+    peer.on('connection', c => {
+      if (conn && conn.open) { c.close(); return; } // room is full (a half-open earlier attempt doesn't count)
+      setConn(c);
+      c.on('open', () => { c.send({ t: 'roster', roster }); startPick(); });
+    });
+  }
+  $('btnOpen').onclick = () => openRoom();
+  $('btnSaveCast').onclick = async () => {
+    let name = (prompt('Save this cast as:', 'Shared cast') || '').trim().slice(0, 30); if (!name) return;
+    try {
+      const have = (await DB.all()).some(g => g.name === name);
+      if (have && !confirm(`"${name}" already exists. Overwrite it?`)) return;
+      await DB.put({ name, people: roster, updated: Date.now() });
+      $('btnSaveCast').textContent = '✓ Saved';
+    } catch (e) { warnStore(); alert("Couldn't save – this browser blocks storage."); }
+  };
+
+  $('btnJoin').onclick = () => {
+    const code = $('joinCode').value.trim().toUpperCase(), msg = t => $('homeMsg').textContent = t;
+    if (code.length !== 5) return msg('Enter the 5-character room code.');
+    msg('Contacting the matchmaking server…');
+    isHost = false;
+    if (peer) peer.destroy();
+    peer = new Peer(undefined, PEER_OPTS);
+    const sigTimer = setTimeout(() => msg("Can't reach the matchmaking server (0.peerjs.com). Your network, VPN or an ad/tracker blocker may be blocking it – try another network or disable the blocker."), 10000);
+    peer.on('open', () => {
+      clearTimeout(sigTimer); msg('Found the server. Looking for the room…');
+      const c = peer.connect(peerId(code), { reliable: true });
+      const seen = {};
+      const diag = () => ' [ICE candidates: ' + (Object.keys(seen).map(k => k + ' ' + seen[k]).join(', ') || 'none') + ']';
+      const watch = () => { const pc = c.peerConnection; if (pc) pc.addEventListener('icecandidate', e => { if (e.candidate) { const t = e.candidate.type || (/ typ (\w+)/.exec(e.candidate.candidate) || [])[1] || '?'; seen[t] = (seen[t] || 0) + 1; } }); };
+      watch(); setTimeout(watch, 0);
+      const to = setTimeout(() => msg("The room exists but a direct connection couldn't be made. This is usually a strict network (school/work Wi-Fi, some mobile carriers) – try a different network on one side." + diag()), 15000);
+      c.on('open', () => { clearTimeout(to); msg(''); setConn(c); });
+      c.on('error', e => { clearTimeout(to); msg('Connection error: ' + e + diag()); });
+    });
+    peer.on('error', err => {
+      clearTimeout(sigTimer);
+      msg(err.type === 'peer-unavailable' ? 'No room with that code. Check it, and make sure the host still has the room tab open.' : 'Connection problem: ' + err.type);
+    });
+  };
+
+  function setConn(c) {
+    conn = c;
+    c.on('data', onData);
+    c.on('close', () => { if (!over) { log('Your opponent disconnected.', 'sys'); disableInputs(); } });
+  }
+  const send = m => conn && conn.open && conn.send(m);
+
+  // ---------- game flow ----------
+  function onData(m) {
+    switch (m.t) {
+      case 'roster': roster = m.roster; $('btnSaveCast').classList.remove('hidden'); startPick(); break;
+      case 'ready': oppReady = true; maybeBegin(); break;
+      case 'chat': log(m.text, 'them'); break;
+      case 'answer': log(m.yes ? 'Yes' : 'No', 'them'); break;
+      case 'guess': handleGuess(m.id); break;
+      case 'result': handleResult(m); break;
+      case 'again': if (over) resetRound(); break;
+    }
+  }
+
+  function startPick() {
+    mySecret = null; iReady = oppReady = false; down = new Set(); guessing = false; over = false;
+    const g = $('pickGrid'); g.innerHTML = '';
+    roster.forEach(p => {
+      const c = cardEl(p);
+      c.onclick = () => {
+        if (iReady) return;
+        mySecret = p; iReady = true;
+        [...g.children].forEach(x => x.classList.remove('sel')); c.classList.add('sel');
+        $('pickStatus').textContent = 'Locked in. Waiting for your opponent…';
+        send({ t: 'ready' }); maybeBegin();
+      };
+      g.append(c);
+    });
+    $('pickStatus').textContent = '';
+    show('pick');
+  }
+
+  function maybeBegin() {
+    if (!(iReady && oppReady)) return;
+    $('log').innerHTML = ''; $('banner').classList.add('hidden'); $('btnAgain').classList.add('hidden');
+    $('mySecret').innerHTML = ''; const sc = cardEl(mySecret); sc.classList.add('mine'); $('mySecret').append(sc);
+    renderBoard(); enableInputs();
+    log("Game on! Ask yes/no questions about your opponent's person.", 'sys');
+    show('gameWrap');
+  }
+
+  function renderBoard() {
+    const b = $('board'); b.innerHTML = '';
+    roster.forEach(p => {
+      const c = cardEl(p);
+      if (down.has(p.id)) c.classList.add('down');
+      c.onclick = () => {
+        if (over) return;
+        if (guessing) {
+          if (!confirm(`Guess that their person is ${p.name}? A wrong guess loses the game.`)) return;
+          guessing = false; $('btnGuessMode').textContent = '🎯 Make a guess';
+          send({ t: 'guess', id: p.id }); log(`You guessed ${p.name}…`, 'sys');
+          return;
+        }
+        down.has(p.id) ? down.delete(p.id) : down.add(p.id);
+        c.classList.toggle('down');
+      };
+      b.append(c);
+    });
+  }
+
+  $('btnGuessMode').onclick = () => {
+    if (over) return;
+    guessing = !guessing;
+    $('btnGuessMode').textContent = guessing ? 'Cancel – click a person to guess' : '🎯 Make a guess';
+  };
+
+  function handleGuess(id) {
+    const correct = id === mySecret.id;
+    const g = roster.find(p => p.id === id);
+    send({ t: 'result', correct, secretId: mySecret.id });
+    log(`Opponent guessed ${g ? g.name : '?'} – ${correct ? 'correct!' : 'wrong.'}`, 'sys');
+    finish(!correct, correct ? `They guessed ${mySecret.name}. You lose!` : `They guessed wrong – you win!`);
+  }
+  function handleResult(m) {
+    const s = roster.find(p => p.id === m.secretId);
+    finish(m.correct, m.correct ? `Correct – it was ${s ? s.name : '?'}! You win!` : `Wrong! Their person was ${s ? s.name : '?'}. You lose.`);
+  }
+  function finish(won, text) {
+    over = true; disableInputs();
+    const b = $('banner'); b.textContent = (won ? '🏆 ' : '💀 ') + text;
+    b.className = 'banner ' + (won ? 'win' : 'lose');
+    $('btnAgain').classList.remove('hidden');
+  }
+
+  $('btnAgain').onclick = () => { send({ t: 'again' }); resetRound(); };
+  function resetRound() {
+    mySecret = null; iReady = oppReady = false; down = new Set(); guessing = false; over = false;
+    startPick();
+  }
+
+  // ---------- chat ----------
+  function log(text, who) {
+    const d = document.createElement('div');
+    d.className = 'msg ' + (who === 'me' ? 'me' : who === 'sys' ? 'sys' : '');
+    d.textContent = text; $('log').append(d); $('log').scrollTop = 1e9;
+  }
+  function sendChat() {
+    const v = $('chatInput').value.trim(); if (!v || over) return;
+    send({ t: 'chat', text: v }); log(v, 'me'); $('chatInput').value = '';
+  }
+  $('btnSend').onclick = sendChat;
+  $('chatInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+  $('btnYes').onclick = () => { if (!over) { send({ t: 'answer', yes: true }); log('Yes', 'me'); } };
+  $('btnNo').onclick = () => { if (!over) { send({ t: 'answer', yes: false }); log('No', 'me'); } };
+  function enableInputs() { ['btnYes', 'btnNo', 'btnSend', 'btnGuessMode', 'chatInput'].forEach(i => $(i).disabled = false); }
+  function disableInputs() { ['btnYes', 'btnNo', 'btnSend', 'btnGuessMode', 'chatInput'].forEach(i => $(i).disabled = true); }
+})();
+</script>
+</body>
+</html>
